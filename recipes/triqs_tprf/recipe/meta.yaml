@@ -1,0 +1,79 @@
+{% set version = "4.0.0.school2026" %}
+
+package:
+  name: triqs_tprf
+  version: {{ version }}
+
+source:
+  # Summer-school 2026 pre-release snapshot (untagged). See CLAUDE.md.
+  git_url: https://github.com/TRIQS/tprf.git
+  git_rev: dd7586ed6f4be318528de728b7f48955797f225e
+
+build:
+  number: 0
+  skip: true  # [win or py<30]
+  # ccache: forward the launcher + cache-dir vars (set by build_one.sh when
+  # CCACHE=1) through conda-build's env sanitization so CMake uses ccache and
+  # writes to the CI-persisted cache. Unset vars (local non-ccache builds) are
+  # harmlessly skipped.
+  script_env:
+    - CMAKE_C_COMPILER_LAUNCHER
+    - CMAKE_CXX_COMPILER_LAUNCHER
+    - CMAKE_Fortran_COMPILER_LAUNCHER
+    - CCACHE_DIR
+    - CCACHE_MAXSIZE
+
+requirements:
+  build:
+    - python                                 # [build_platform != target_platform]
+    - cross-python_{{ target_platform }}     # [build_platform != target_platform]
+    - numpy                                  # [build_platform != target_platform]
+    - cmake
+    - make
+    - llvm-openmp  # [osx]
+    - libgomp      # [linux]
+    - {{ compiler('c') }}
+    - {{ compiler('cxx') }}
+    - {{ stdlib("c") }}
+    - {{ mpi }}                              # [mpi == 'openmpi' and build_platform != target_platform]
+    - setuptools  # [py>=312]
+  host:
+    - triqs =={{ version }}
+    - libboost-devel
+    - fftw
+    - {{ mpi }}
+    - libblas
+    - liblapack
+    - numpy
+    - python
+    - setuptools  # [py>=312]
+  run:
+    - {{ pin_compatible("triqs", max_pin="x.x") }}
+    - fftw
+    - {{ mpi }}
+    - libblas
+    - liblapack
+    - python
+    - setuptools  # [py>=312]
+
+test:
+  commands:
+    - export OMPI_MCA_btl=self,tcp
+    - export OMPI_MCA_plm=isolated
+    - export OMPI_MCA_rmaps_base_oversubscribe=yes
+    - export OMPI_MCA_btl_vader_single_copy_mechanism=none
+    - export mpiexec="mpiexec --allow-run-as-root"
+    - python -c "import triqs_tprf"
+
+about:
+  home: https://triqs.github.io/tprf
+  license: GPL-3.0-or-later
+  license_family: GPL
+  license_file: LICENSE.txt
+  summary: The Two-Particle Response Function tool box for TRIQS
+
+extra:
+  recipe-maintainers:
+    - wentzell
+    - pgunn
+    - thoemi09

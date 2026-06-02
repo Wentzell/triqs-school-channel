@@ -1,0 +1,91 @@
+{% set version = "4.0.0.school2026" %}
+
+{% set mpi_prefix = "mpi_" + mpi %}
+
+package:
+  name: triqs
+  version: {{ version }}
+
+source:
+  # Summer-school 2026 pre-release snapshot (untagged). See CLAUDE.md.
+  git_url: https://github.com/TRIQS/triqs.git
+  git_rev: 18fb9558a8378be412d5c8516d88d6d478a94fff
+
+build:
+  number: 0
+  skip: true  # [win or py<30]
+  # ccache: forward the launcher + cache-dir vars (set by build_one.sh when
+  # CCACHE=1) through conda-build's env sanitization so CMake uses ccache and
+  # writes to the CI-persisted cache. Unset vars (local non-ccache builds) are
+  # harmlessly skipped.
+  script_env:
+    - CMAKE_C_COMPILER_LAUNCHER
+    - CMAKE_CXX_COMPILER_LAUNCHER
+    - CMAKE_Fortran_COMPILER_LAUNCHER
+    - CCACHE_DIR
+    - CCACHE_MAXSIZE
+
+requirements:
+  build:
+    - python                                 # [build_platform != target_platform]
+    - cross-python_{{ target_platform }}     # [build_platform != target_platform]
+    - numpy                                  # [build_platform != target_platform]
+    - scipy                                  # [build_platform != target_platform]
+    - make
+    - cmake
+    - {{ compiler('c') }}
+    - {{ compiler('cxx') }}
+    - {{ stdlib("c") }}
+    - {{ mpi }}                              # [mpi == 'openmpi' and build_platform != target_platform]
+    - clangxx  # [osx]
+  host:
+    - libboost-devel
+    - fftw
+    - fftw * {{ mpi_prefix }}_*
+    - gmp
+    - hdf5
+    - hdf5 * {{ mpi_prefix }}_*
+    - mako
+    - importlib-metadata  # [py<38]
+    - mpi4py
+    - numpy
+    - {{ mpi }}
+    - python
+    - scipy
+    - libblas
+    - liblapack
+    - libclang
+    - zlib
+  run:
+    - fftw
+    - fftw * {{ mpi_prefix }}_*
+    - gmp
+    - hdf5
+    - hdf5 * {{ mpi_prefix }}_*
+    - mako
+    - importlib-metadata  # [py<38]
+    - mpi4py
+    - {{ mpi }}
+    - python
+    - scipy
+    - matplotlib-base
+    - libclang
+    - zlib
+    - {{ compiler('cxx') }}
+
+test:
+  imports:
+    - triqs
+
+about:
+  home: https://triqs.github.io
+  license: GPL-3.0-or-later
+  license_family: GPL
+  license_file: LICENSE.txt
+  summary: Toolbox for Research on Interacting Quantum Systems
+
+extra:
+  recipe-maintainers:
+    - wentzell
+    - pgunn
+    - thoemi09

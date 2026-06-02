@@ -1,0 +1,76 @@
+{% set version = "4.0.0.school2026" %}
+
+package:
+  name: triqs_modest
+  version: {{ version }}
+
+source:
+  # Summer-school 2026 pre-release snapshot (untagged). See CLAUDE.md.
+  git_url: https://github.com/TRIQS/modest.git
+  git_rev: 5936a266ed3a664148f6747d54f26fcc81a6c126
+
+build:
+  number: 0
+  skip: true  # [win or py<30]
+  # ccache: forward the launcher + cache-dir vars (set by build_one.sh when
+  # CCACHE=1) through conda-build's env sanitization so CMake uses ccache and
+  # writes to the CI-persisted cache. Unset vars (local non-ccache builds) are
+  # harmlessly skipped.
+  script_env:
+    - CMAKE_C_COMPILER_LAUNCHER
+    - CMAKE_CXX_COMPILER_LAUNCHER
+    - CMAKE_Fortran_COMPILER_LAUNCHER
+    - CCACHE_DIR
+    - CCACHE_MAXSIZE
+
+requirements:
+  build:
+    - python                                 # [build_platform != target_platform]
+    - cross-python_{{ target_platform }}     # [build_platform != target_platform]
+    - numpy                                  # [build_platform != target_platform]
+    - cmake
+    - make
+    - {{ compiler('c') }}
+    - {{ compiler('cxx') }}
+    - {{ compiler('fortran') }}              # builds CPM-bundled dftkit/dmftproj
+    - {{ stdlib("c") }}
+    - {{ mpi }}                              # [mpi == 'openmpi' and build_platform != target_platform]
+  host:
+    # dftkit (dmftproj + the triqs_dftkit python module) is CPM-bundled and built
+    # in-tree. c2py and TartanLlama/ranges are also fetched at configure time (CPM).
+    - triqs =={{ version }}
+    - libboost-devel
+    - hdf5
+    - {{ mpi }}
+    - libblas
+    - liblapack
+    - numpy
+    - python
+  run:
+    - {{ pin_compatible("triqs", max_pin="x.x") }}
+    - hdf5
+    - {{ mpi }}
+    - libblas
+    - liblapack
+    - python
+
+test:
+  commands:
+    - export OMPI_MCA_btl=self,tcp
+    - export OMPI_MCA_plm=isolated
+    - export OMPI_MCA_rmaps_base_oversubscribe=yes
+    - export OMPI_MCA_btl_vader_single_copy_mechanism=none
+    - export mpiexec="mpiexec --allow-run-as-root"
+    - python -c "import triqs_modest"
+
+about:
+  home: https://github.com/TRIQS/modest
+  license: GPL-3.0-or-later
+  license_family: GPL
+  license_file: LICENSE
+  summary: A TRIQS-based toolbox for model construction from DFT (uses dmftproj)
+
+extra:
+  recipe-maintainers:
+    - wentzell
+    - thoemi09

@@ -1,0 +1,47 @@
+# Build matrix for the school channel.
+#
+# We build WITHOUT conda-smithy, so conda-forge's global pinning is not injected.
+# conda-build only auto-reads a conda_build_config.yaml from the recipe dir (this
+# file), cwd, or ~ — NOT from $CONDA_PREFIX — so we define here the compiler/stdlib
+# *base* variables that {{ compiler(...) }} / {{ stdlib(...) }} expand against.
+#
+# Compiler *versions* are intentionally left unpinned: conda solves each to the
+# latest available, identical across every package built in one run, so triqs and
+# the apps that link it share one toolchain/ABI (and modest's gfortran stays
+# coupled to its gcc). This file is identical across all recipes.
+mpi:
+  - mpich
+  - openmpi
+mpich:
+  - '4'
+openmpi:
+  - '5'
+python:
+  - 3.12.* *_cpython
+  - 3.13.* *_cp313
+  - 3.14.* *_cp314
+# Build against numpy 2 for ALL pythons (single ABI across the matrix, like the
+# compiler/stdlib pins). The bare major-version pin '2' is what conda-forge's global
+# pinning uses: it floats across the whole 2.x series so the solver picks whatever
+# 2.x build matches each python (2.1+ ships the cp313 builds, 2.0 does not), with no
+# per-python bookkeeping and no need to re-bump when py3.14 lands. numpy is a bare
+# host dep (no run: entry) — the runtime constraint comes from numpy's run_exports,
+# and the 2.x forward-compatible C-ABI keeps extensions runnable against numpy >=1.x.
+numpy:
+  - '2'
+c_compiler:
+  - gcc        # [linux]
+  - clang      # [osx]
+cxx_compiler:
+  - gxx        # [linux]
+  - clangxx    # [osx]
+fortran_compiler:
+  - gfortran   # [linux]
+  - gfortran   # [osx]
+c_stdlib:
+  - sysroot                    # [linux]
+  - macosx_deployment_target   # [osx]
+c_stdlib_version:
+  - '2.17'     # [linux]
+  - '10.13'    # [osx and x86_64]
+  - '11.0'     # [osx and arm64]

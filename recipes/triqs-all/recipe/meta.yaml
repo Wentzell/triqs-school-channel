@@ -1,0 +1,43 @@
+{% set version = "4.0.0.school2026" %}
+
+package:
+  name: triqs-all
+  version: {{ version }}
+
+build:
+  number: 0
+  noarch: generic    # metapackage: ships no files, just pulls in the school set
+
+requirements:
+  run:
+    - triqs =={{ version }}
+    - triqs_cthyb =={{ version }}
+    - triqs_ctseg =={{ version }}
+    - triqs_modest =={{ version }}
+    - triqs_tprf =={{ version }}
+    - triqs_maxent =={{ version }}
+    - triqs_hubbardi =={{ version }}
+    - triqs_hartree_fock =={{ version }}
+
+test:
+  imports:
+    - triqs
+    - triqs_cthyb
+    - triqs_ctseg
+    - triqs_dftkit    # bundled inside triqs_modest (Fortran dmftproj smoke check)
+    - triqs_modest
+    - triqs_tprf
+    - triqs_maxent
+    - triqs_hubbardI
+    - triqs_hartree_fock
+
+about:
+  home: https://triqs.github.io
+  license: GPL-3.0-or-later
+  license_family: GPL
+  summary: TRIQS summer-school 2026 software set (pre-release 4.0 snapshot, all applications)
+
+extra:
+  recipe-maintainers:
+    - wentzell
+    - thoemi09
