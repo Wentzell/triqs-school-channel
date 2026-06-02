@@ -1,0 +1,85 @@
+name: build-package
+
+# Reusable workflow: build ONE package across the full platform x MPI x Python
+# matrix, one job per variant (per-variant split), with ccache. Each job builds
+# its single variant and uploads it to the run's staging label.
+
+on:
+  workflow_call:
+    inputs:
+      package:
+        description: "Recipe dir under recipes/ (e.g. triqs, triqs_cthyb, modest)"
+        required: true
+        type: string
+      label:
+        description: "Staging label to publish to (e.g. staging-<run_id>)"
+        required: true
+        type: string
+    secrets:
+      ANACONDA_TOKEN:
+        required: true
+
+jobs:
+  build:
+    name: ${{ inputs.package }} · ${{ matrix.conda_plat }} · ${{ matrix.mpi }} · py${{ matrix.python }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 350          # < GitHub's 360 hard cap; per-variant jobs stay well under
+    strategy:
+      fail-fast: false            # one variant failing must not cancel its siblings
+      # >>> Full matrix: TWO platforms (linux-64, osx-arm64), both NATIVE, across
+      # {openmpi, mpich} x {py3.12, py3.13, py3.14} = 12 jobs. osx-64 (Intel Mac) is
+      # NOT supported: GitHub's Intel macos-13 runners are retired, and cross-compiling
+      # osx-64 on arm64 is blocked by TRIQS's build system (libclang/MPI/Python all
+      # run tools that can't execute cross). macOS runners bill ~10x Linux. <<<
+      matrix:
+        include:
+          - { os: ubuntu-latest, conda_plat: linux-64,  mpi: openmpi, python: "3.12" }
+          - { os: ubuntu-latest, conda_plat: linux-64,  mpi: openmpi, python: "3.13" }
+          - { os: ubuntu-latest, conda_plat: linux-64,  mpi: openmpi, python: "3.14" }
+          - { os: ubuntu-latest, conda_plat: linux-64,  mpi: mpich,   python: "3.12" }
+          - { os: ubuntu-latest, conda_plat: linux-64,  mpi: mpich,   python: "3.13" }
+          - { os: ubuntu-latest, conda_plat: linux-64,  mpi: mpich,   python: "3.14" }
+          - { os: macos-14,      conda_plat: osx-arm64, mpi: openmpi, python: "3.12", macosx_deployment_target: "11.0" }
+          - { os: macos-14,      conda_plat: osx-arm64, mpi: openmpi, python: "3.13", macosx_deployment_target: "11.0" }
+          - { os: macos-14,      conda_plat: osx-arm64, mpi: openmpi, python: "3.14", macosx_deployment_target: "11.0" }
+          - { os: macos-14,      conda_plat: osx-arm64, mpi: mpich,   python: "3.12", macosx_deployment_target: "11.0" }
+          - { os: macos-14,      conda_plat: osx-arm64, mpi: mpich,   python: "3.13", macosx_deployment_target: "11.0" }
+          - { os: macos-14,      conda_plat: osx-arm64, mpi: mpich,   python: "3.14", macosx_deployment_target: "11.0" }
+    defaults:
+      run:
+        shell: bash -el {0}       # login shell so conda is activated
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Miniforge
+        uses: conda-incubator/setup-miniconda@v3
+        with:
+          miniforge-version: latest
+          channels: conda-forge
+          conda-remove-defaults: "true"
+
+      - name: Install build tooling
+        # The compiler/stdlib base variables that {{ compiler() }}/{{ stdlib() }} need
+        # are defined in each recipe's conda_build_config.yaml (we build without
+        # conda-smithy, and conda-build does not auto-read conda-forge-pinning from
+        # $CONDA_PREFIX), so no pinning package is required here.
+        run: conda install -n base -y conda-build anaconda-client ccache
+
+      - name: ccache cache
+        uses: hendrikmuhs/ccache-action@v1.2
+        with:
+          key: ${{ matrix.conda_plat }}-${{ inputs.package }}-${{ matrix.mpi }}-py${{ matrix.python }}
+          max-size: "2G"
+
+      - name: macOS SDK / deployment target
+        if: runner.os == 'macOS'
+        run: |
+          echo "CONDA_BUILD_SYSROOT=$(xcrun --show-sdk-path)" >> "$GITHUB_ENV"
+          echo "MACOSX_DEPLOYMENT_TARGET=${{ matrix.macosx_deployment_target }}" >> "$GITHUB_ENV"
+
+      - name: Build + upload variant
+        env:
+          STAGING_LABEL: ${{ inputs.label }}
+          ANACONDA_TOKEN: ${{ secrets.ANACONDA_TOKEN }}
+          CCACHE: "1"
+        run: ./build_one.sh "${{ inputs.package }}" "${{ matrix.mpi }}" "${{ matrix.python }}"

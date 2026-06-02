@@ -1,0 +1,38 @@
+name: promote-channel
+
+# Standalone promotion of an ALREADY-built, ALREADY-verified staging label to the
+# public `main` label — no rebuild. Use this when a build-channel run was fully
+# green through `verify` but the in-run `promote` step failed (or was run with
+# promote=false), so you don't want to re-run the whole 12-cell matrix just to
+# relabel. Only promote a label whose `verify` passed on all platforms.
+
+on:
+  workflow_dispatch:
+    inputs:
+      label:
+        description: "Staging label to promote to main (e.g. staging-26770462800)"
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  promote:
+    runs-on: ubuntu-latest
+    environment: production      # same approval gate as build-channel's promote job
+    defaults:
+      run:
+        shell: bash -el {0}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: conda-incubator/setup-miniconda@v3
+        with:
+          miniforge-version: latest
+          channels: conda-forge
+          conda-remove-defaults: "true"
+      - run: conda install -n base -y anaconda-client
+      - name: Promote staging -> main
+        env:
+          ANACONDA_TOKEN: ${{ secrets.ANACONDA_TOKEN }}
+        run: ./promote.sh "${{ inputs.label }}"

@@ -1,0 +1,162 @@
+name: build-channel
+
+# Orchestrates the whole triqs-summer-school channel:
+#   build (per-variant, per-package, in dependency order) -> staging label
+#   -> metapackage -> verify on both platforms -> gated promote to `main`.
+#
+# Everything is published to a per-run staging label first; the public `main`
+# label is touched ONLY by the final promote job, after verify passes. A failed
+# or timed-out run therefore never corrupts the live channel — just re-run the
+# failed jobs (the staging label is stable across re-runs of the same run).
+# NOTE: promote relabels staging -> main via `anaconda move`, which CONSUMES the
+# staging label. So re-running ONLY the promote job after it already succeeded
+# finds nothing on staging; re-run from a build job (which re-uploads) instead.
+
+on:
+  workflow_dispatch:
+    inputs:
+      promote:
+        description: "Relabel staging -> main after verify passes"
+        type: boolean
+        default: true
+
+concurrency:
+  group: build-channel-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  # ---- pre-flight: render all recipes in seconds; gate the whole matrix ------
+  preflight:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        shell: bash -el {0}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: conda-incubator/setup-miniconda@v3
+        with:
+          miniforge-version: latest
+          channels: conda-forge
+          conda-remove-defaults: "true"
+      - run: conda install -n base -y conda-build
+      - name: Render every recipe (no dep solve)
+        run: conda run -n base bash render_check.sh
+
+  # ---- level 0: the root (gated on pre-flight) -------------------------------
+  triqs:
+    needs: preflight
+    uses: ./.github/workflows/build-package.yml
+    with: { package: triqs, label: "staging-${{ github.run_id }}" }
+    secrets: inherit
+
+  # ---- level 1: everything that needs only triqs (build in parallel) ---------
+  hartree_fock:
+    needs: triqs
+    uses: ./.github/workflows/build-package.yml
+    with: { package: triqs_hartree_fock, label: "staging-${{ github.run_id }}" }
+    secrets: inherit
+  cthyb:
+    needs: triqs
+    uses: ./.github/workflows/build-package.yml
+    with: { package: triqs_cthyb, label: "staging-${{ github.run_id }}" }
+    secrets: inherit
+  ctseg:
+    needs: triqs
+    uses: ./.github/workflows/build-package.yml
+    with: { package: triqs_ctseg, label: "staging-${{ github.run_id }}" }
+    secrets: inherit
+  tprf:
+    needs: triqs
+    uses: ./.github/workflows/build-package.yml
+    with: { package: triqs_tprf, label: "staging-${{ github.run_id }}" }
+    secrets: inherit
+  maxent:
+    needs: triqs
+    uses: ./.github/workflows/build-package.yml
+    with: { package: triqs_maxent, label: "staging-${{ github.run_id }}" }
+    secrets: inherit
+  hubbardI:
+    needs: triqs
+    uses: ./.github/workflows/build-package.yml
+    with: { package: triqs_hubbardI, label: "staging-${{ github.run_id }}" }
+    secrets: inherit
+  modest:                      # bundles its own dftkit/dmftproj (Fortran)
+    needs: triqs
+    uses: ./.github/workflows/build-package.yml
+    with: { package: modest, label: "staging-${{ github.run_id }}" }
+    secrets: inherit
+
+  # ---- level 2: noarch metapackage (built once on linux) ---------------------
+  metapackage:
+    needs: [triqs, hartree_fock, cthyb, ctseg, tprf, maxent, hubbardI, modest]
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        shell: bash -el {0}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: conda-incubator/setup-miniconda@v3
+        with:
+          miniforge-version: latest
+          channels: conda-forge
+          conda-remove-defaults: "true"
+      - run: conda install -n base -y conda-build anaconda-client
+      - name: Build + upload triqs-all
+        env:
+          STAGING_LABEL: "staging-${{ github.run_id }}"
+          ANACONDA_TOKEN: ${{ secrets.ANACONDA_TOKEN }}
+        run: ./build_one.sh triqs-all
+
+  # ---- gate: install the metapackage fresh on every platform -----------------
+  verify:
+    needs: metapackage
+    strategy:
+      fail-fast: false
+      # Verify the metapackage installs on every platform we build (both native).
+      matrix:
+        include:
+          - { os: ubuntu-latest, conda_plat: linux-64 }
+          - { os: macos-14,      conda_plat: osx-arm64 }
+    runs-on: ${{ matrix.os }}
+    defaults:
+      run:
+        shell: bash -el {0}
+    steps:
+      - uses: conda-incubator/setup-miniconda@v3
+        with:
+          miniforge-version: latest
+          channels: conda-forge
+          conda-remove-defaults: "true"
+      - name: Install triqs-all from staging and import everything
+        run: |
+          conda create -n school -y \
+            -c "triqs-summer-school/label/staging-${{ github.run_id }}" -c conda-forge \
+            triqs-all
+          conda run -n school python -c "import triqs, triqs_cthyb, triqs_ctseg, \
+            triqs_dftkit, triqs_modest, triqs_tprf, \
+            triqs_maxent, triqs_hubbardI, triqs_hartree_fock; print('school stack OK on ${{ matrix.conda_plat }}')"
+
+  # ---- promote: the ONLY job that writes the public `main` label -------------
+  promote:
+    needs: verify
+    if: ${{ inputs.promote }}
+    runs-on: ubuntu-latest
+    environment: production      # add required reviewers in repo settings for manual approval
+    defaults:
+      run:
+        shell: bash -el {0}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: conda-incubator/setup-miniconda@v3
+        with:
+          miniforge-version: latest
+          channels: conda-forge
+          conda-remove-defaults: "true"
+      - run: conda install -n base -y anaconda-client
+      - name: Promote staging -> main
+        env:
+          ANACONDA_TOKEN: ${{ secrets.ANACONDA_TOKEN }}
+        run: ./promote.sh "staging-${{ github.run_id }}"
