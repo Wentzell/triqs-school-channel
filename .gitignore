@@ -1,0 +1,13 @@
+# macOS (this tree lives under Dropbox)
+.DS_Store
+
+# local build artifacts (conda-bld normally lives under the conda prefix, but
+# guard against any in-tree outputs / scratch)
+*.conda
+*.tar.bz2
+build/
+conda-bld/
+
+# python scratch
+__pycache__/
+*.pyc
